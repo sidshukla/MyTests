@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:oxm="http://www.springframework.org/schema/oxm" xmlns:int="http://www.springframework.org/schema/integration"
+	xmlns:int-ip="http://www.springframework.org/schema/integration/ip"
+	xmlns:util="http://www.springframework.org/schema/util"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+       http://www.springframework.org/schema/oxm http://www.springframework.org/schema/oxm/spring-oxm-3.0.xsd
+       http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.0.xsd
+       http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration.xsd
+		http://www.springframework.org/schema/integration/ip http://www.springframework.org/schema/integration/ip/spring-integration-ip.xsd"
+	default-lazy-init="true">
+
+	<!-- Activates scanning of @Autowired -->
+	<context:annotation-config />
+
+	<!-- Activates auto scanning for @Component and @Service -->
+	<context:component-scan base-package="com.cisco.telnet.app" />
+
+
+	<context:property-placeholder
+		location="classpath:/applicationConfiguration.properties" />
+	<context:property-placeholder />
+
+	<!-- Command Map to handle execute user command -->
+	<util:map key-type="com.cisco.telnet.app.command.CommandEnum"
+		value-type="com.cisco.telnet.app.command.Command" id="commandMap">
+		<entry>
+			<key>
+				<value type="com.cisco.telnet.app.command.CommandEnum">CD</value>
+			</key>
+			<ref bean="cdCommand" />
+		</entry>
+		<entry>
+			<key>
+				<value type="com.cisco.telnet.app.command.CommandEnum">LS</value>
+			</key>
+			<ref bean="lsCommand" />
+		</entry>
+		<entry>
+			<key>
+				<value type="com.cisco.telnet.app.command.CommandEnum">MKDIR</value>
+			</key>
+			<ref bean="mkdirCommand" />
+		</entry>
+		<entry>
+			<key>
+				<value type="com.cisco.telnet.app.command.CommandEnum">PWD</value>
+			</key>
+			<ref bean="pwdCommand" />
+		</entry>
+	</util:map>
+
+
+	<!-- Client side -->
+
+	<int:gateway id="cgw"
+		service-interface="com.cisco.telnet.app.request.RequestGateway"
+		default-request-channel="input" />
+
+	<int-ip:tcp-connection-factory id="client"
+		type="client" host="localhost" port="${availableServerSocket}"
+		single-use="false" so-timeout="600000" />
+
+	<int:channel id="input" />
+
+	<int-ip:tcp-outbound-gateway id="outGateway"
+		request-channel="input" reply-channel="clientBytes2StringChannel"
+		connection-factory="client" request-timeout="600000" reply-timeout="600000" />
+
+	<int:transformer id="clientBytes2String" input-channel="clientBytes2StringChannel"
+		expression="new String(payload)" />
+
+	<!-- Server side -->
+
+	<int-ip:tcp-connection-factory id="crLfServer"
+		type="server" port="${availableServerSocket}" so-timeout="${app.connection.expire.millis}" apply-sequence="true"/>
+
+	<int-ip:tcp-inbound-gateway id="gatewayCrLf"
+		connection-factory="crLfServer" request-channel="serverBytes2StringChannel"
+		error-channel="errorChannel" />
+
+	<int:channel id="toSA" />
+
+	<int:service-activator input-channel="toSA"
+		ref="inputHandler" method="handle" />
+
+	<int:transformer id="serverBytes2String" input-channel="serverBytes2StringChannel"
+		output-channel="toSA" expression="new String(payload)" />
+
+	<int:transformer id="errorHandler" input-channel="errorChannel"
+		expression="payload.failedMessage.payload + ' ==> ' + payload.cause.message" />
+
+</beans>
